@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private Point? _dragStart;
     private double _dragStartH;
     private double _dragStartV;
+    private bool _hasDragged;
 
     public MainWindow()
     {
@@ -304,11 +305,14 @@ public partial class MainWindow : Window
 
     // --- ズーム時のドラッグパン ---
 
+    private const double ClickDragThreshold = 5.0;
+
     private void ImageScrollViewer_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         _dragStart = e.GetPosition(ImageScrollViewer);
         _dragStartH = ImageScrollViewer.HorizontalOffset;
         _dragStartV = ImageScrollViewer.VerticalOffset;
+        _hasDragged = false;
         ImageScrollViewer.CaptureMouse();
     }
 
@@ -318,14 +322,36 @@ public partial class MainWindow : Window
 
         var pos = e.GetPosition(ImageScrollViewer);
         var delta = pos - _dragStart.Value;
+
+        if (Math.Abs(delta.X) > ClickDragThreshold || Math.Abs(delta.Y) > ClickDragThreshold)
+        {
+            _hasDragged = true;
+        }
+
         ImageScrollViewer.ScrollToHorizontalOffset(_dragStartH - delta.X);
         ImageScrollViewer.ScrollToVerticalOffset(_dragStartV - delta.Y);
     }
 
     private void ImageScrollViewer_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
+        bool wasClick = _dragStart is not null && !_hasDragged;
+        var clickPos = _dragStart;
+
         _dragStart = null;
         ImageScrollViewer.ReleaseMouseCapture();
+
+        if (wasClick && clickPos is not null && ImageScrollViewer.ActualWidth > 0)
+        {
+            // 画面左半分クリック=前のページ、右半分=次のページ(ドラッグと判定された場合は送らない)
+            if (clickPos.Value.X < ImageScrollViewer.ActualWidth / 2)
+            {
+                if (_viewModel.PrevPageCommand.CanExecute(null)) _viewModel.PrevPageCommand.Execute(null);
+            }
+            else
+            {
+                if (_viewModel.NextPageCommand.CanExecute(null)) _viewModel.NextPageCommand.Execute(null);
+            }
+        }
     }
 
     // --- フォルダツリー(遅延ロード) ---
