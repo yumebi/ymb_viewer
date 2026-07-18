@@ -1,0 +1,351 @@
+<Window x:Class="Hamana.Viewer.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:Hamana.Viewer"
+        xmlns:conv="clr-namespace:Hamana.Viewer.Converters"
+        xmlns:m="clr-namespace:Hamana.Viewer.Models"
+        mc:Ignorable="d"
+        Title="YMB イメージビューワー" Height="800" Width="1280"
+        Background="#1e1e1e"
+        AllowDrop="True"
+        Drop="Window_Drop"
+        PreviewMouseWheel="Window_PreviewMouseWheel"
+        PreviewKeyDown="Window_PreviewKeyDown"
+        WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis"/>
+        <conv:BoolToFlowDirectionConverter x:Key="BoolToFlow"/>
+        <conv:PathToThumbnailConverter x:Key="PathToThumb"/>
+        <conv:PathToNameConverter x:Key="PathToName"/>
+
+        <Style TargetType="Button" x:Key="ToolButton">
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="Margin" Value="2,0"/>
+            <Setter Property="Background" Value="#2d2d30"/>
+            <Setter Property="Foreground" Value="#e0e0e0"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="MinWidth" Value="28"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}"
+                                BorderThickness="{TemplateBinding BorderThickness}" BorderBrush="{TemplateBinding BorderBrush}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#3e3e42"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#0e639c"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#6d6d6d"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="ToggleButton" x:Key="ToolToggle">
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="Margin" Value="2,0"/>
+            <Setter Property="Background" Value="#2d2d30"/>
+            <Setter Property="Foreground" Value="#e0e0e0"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}"
+                                BorderThickness="{TemplateBinding BorderThickness}" BorderBrush="{TemplateBinding BorderBrush}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#3e3e42"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#0e639c"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- サイドバー用の小さいボタン(お気に入り削除など) -->
+        <Style TargetType="Button" x:Key="MiniButton" BasedOn="{StaticResource ToolButton}">
+            <Setter Property="Padding" Value="4,0"/>
+            <Setter Property="MinWidth" Value="20"/>
+            <Setter Property="FontSize" Value="11"/>
+        </Style>
+
+        <!-- ダークテーマ: 既定コントロールの文字色/選択色が背景に埋もれるため明示 -->
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#cccccc"/>
+        </Style>
+
+        <Style TargetType="TabItem">
+            <Setter Property="Foreground" Value="#cccccc"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="Bd" Background="#2d2d30" Padding="{TemplateBinding Padding}" Margin="0,0,2,0">
+                            <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#3e3e42"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#0e639c"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="TreeView">
+            <Setter Property="Foreground" Value="#cccccc"/>
+        </Style>
+        <Style TargetType="TreeViewItem">
+            <Setter Property="Foreground" Value="#cccccc"/>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#0e639c"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="2"/>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#0e639c"/>
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#3e3e42"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Setter Property="Foreground" Value="#000000"/>
+        </Style>
+    </Window.Resources>
+
+    <Window.InputBindings>
+        <KeyBinding Key="Right" Command="{Binding NextPageCommand}"/>
+        <KeyBinding Key="Left" Command="{Binding PrevPageCommand}"/>
+        <KeyBinding Key="PageDown" Command="{Binding NextPageCommand}"/>
+        <KeyBinding Key="PageUp" Command="{Binding PrevPageCommand}"/>
+        <KeyBinding Key="Space" Command="{Binding NextPageCommand}"/>
+        <KeyBinding Key="S" Command="{Binding ToggleSpreadCommand}"/>
+        <KeyBinding Key="T" Command="{Binding ToggleSidebarCommand}"/>
+        <KeyBinding Key="D" Command="{Binding ToggleDirectionCommand}"/>
+        <KeyBinding Key="OemPlus" Command="{Binding ZoomInCommand}"/>
+        <KeyBinding Key="Add" Command="{Binding ZoomInCommand}"/>
+        <KeyBinding Key="OemMinus" Command="{Binding ZoomOutCommand}"/>
+        <KeyBinding Key="Subtract" Command="{Binding ZoomOutCommand}"/>
+        <KeyBinding Key="D0" Command="{Binding ResetZoomCommand}"/>
+        <KeyBinding Key="R" Command="{Binding RotateRightCommand}"/>
+        <KeyBinding Key="R" Modifiers="Shift" Command="{Binding RotateLeftCommand}"/>
+        <KeyBinding Key="P" Command="{Binding ToggleSlideshowCommand}"/>
+        <KeyBinding Key="F11" Command="{Binding ToggleFullScreenCommand}"/>
+    </Window.InputBindings>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- ツールバー(全画面時は非表示) -->
+        <Border Grid.Row="0" Background="#2d2d30" Padding="4"
+                Visibility="{Binding IsFullScreen, Converter={StaticResource InverseBoolToVis}}">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="開く" Style="{StaticResource ToolButton}" Click="OpenFolder_Click"/>
+                    <Button Content="★ お気に入り追加" Style="{StaticResource ToolButton}" Command="{Binding AddFavoriteCommand}"/>
+                    <Separator/>
+                    <Button Content="－" Style="{StaticResource ToolButton}" Command="{Binding ZoomOutCommand}" ToolTip="縮小 (-)"/>
+                    <TextBlock Text="{Binding EffectiveZoom, StringFormat={}{0:P0}}"
+                               VerticalAlignment="Center" Width="48" TextAlignment="Center"/>
+                    <Button Content="＋" Style="{StaticResource ToolButton}" Command="{Binding ZoomInCommand}" ToolTip="拡大 (+)"/>
+                    <ComboBox SelectedValue="{Binding FitMode}" SelectedValuePath="Tag" Width="90" Margin="2,0" VerticalAlignment="Center"
+                              ToolTip="全体表示=画像全体が見える(余白あり) / 幅優先=常に横幅いっぱい / 高さ優先=常に縦幅いっぱい / 覆う=画面全体を覆う(はみ出た分はドラッグでスクロール)">
+                        <ComboBoxItem Content="全体表示" Tag="{x:Static m:FitMode.Contain}"/>
+                        <ComboBoxItem Content="幅優先" Tag="{x:Static m:FitMode.FitWidth}"/>
+                        <ComboBoxItem Content="高さ優先" Tag="{x:Static m:FitMode.FitHeight}"/>
+                        <ComboBoxItem Content="覆う" Tag="{x:Static m:FitMode.Cover}"/>
+                    </ComboBox>
+                    <Separator/>
+                    <Button Content="⟲" Style="{StaticResource ToolButton}" Command="{Binding RotateLeftCommand}" ToolTip="左回転 (Shift+R)"/>
+                    <Button Content="⟳" Style="{StaticResource ToolButton}" Command="{Binding RotateRightCommand}" ToolTip="右回転 (R)"/>
+                    <ToggleButton Content="自動回転" Style="{StaticResource ToolToggle}" IsChecked="{Binding IsAutoRotate}"
+                                  ToolTip="単一表示時、0度/90度のうち大きく収まる方へ自動回転"/>
+                    <Separator/>
+                    <ToggleButton Content="見開き" Style="{StaticResource ToolToggle}" IsChecked="{Binding IsSpreadMode}" ToolTip="見開き表示 (S)"/>
+                    <ToggleButton Content="右→左" Style="{StaticResource ToolToggle}" IsChecked="{Binding IsRightToLeft}" ToolTip="読み進行方向 (D)"/>
+                    <ToggleButton Content="一覧固定" Style="{StaticResource ToolToggle}" IsChecked="{Binding IsSidebarVisible}"
+                                  ToolTip="左端にマウスを合わせると一覧が出ます。固定表示するならON (T)"/>
+                    <ToggleButton Content="全画面" Style="{StaticResource ToolToggle}" IsChecked="{Binding IsFullScreen}" ToolTip="全画面表示 (F11 / Esc で解除)"/>
+                    <ToggleButton Content="ホイール:ズーム" Style="{StaticResource ToolToggle}" IsChecked="{Binding IsWheelZoomMode}"
+                                  ToolTip="画像上で右クリックでも切替可(Ctrlで一時反転)"/>
+                    <ToggleButton Content="フィルター" Style="{StaticResource ToolToggle}" IsChecked="{Binding IsFilterPanelVisible}"/>
+                    <Separator/>
+                    <ComboBox SelectedValue="{Binding SortMode}" SelectedValuePath="Tag" Width="100" Margin="2,0" VerticalAlignment="Center">
+                        <ComboBoxItem Content="名前順" Tag="{x:Static m:SortMode.NameNatural}"/>
+                        <ComboBoxItem Content="更新日時順" Tag="{x:Static m:SortMode.DateModified}"/>
+                        <ComboBoxItem Content="サイズ順" Tag="{x:Static m:SortMode.Size}"/>
+                    </ComboBox>
+                    <ToggleButton Content="降順" Style="{StaticResource ToolToggle}" IsChecked="{Binding SortDescending}"/>
+                    <Separator/>
+                    <ToggleButton Content="▶ スライド" Style="{StaticResource ToolToggle}" IsChecked="{Binding IsSlideshowActive}" ToolTip="自動送り開始/停止 (P)"/>
+                    <TextBlock Text="間隔" VerticalAlignment="Center" Margin="6,0,2,0"/>
+                    <TextBox Text="{Binding SlideshowIntervalSeconds, UpdateSourceTrigger=PropertyChanged, StringFormat={}{0:0.#}}"
+                             Width="40" VerticalAlignment="Center"/>
+                    <TextBlock Text="秒" VerticalAlignment="Center" Margin="2,0"/>
+                    <TextBlock Text="端で:" VerticalAlignment="Center" Margin="6,0,2,0"/>
+                    <ComboBox SelectedValue="{Binding BoundaryAction}" SelectedValuePath="Tag" Width="110" VerticalAlignment="Center">
+                        <ComboBoxItem Content="ループ" Tag="{x:Static m:BoundaryAction.Loop}"/>
+                        <ComboBoxItem Content="フォルダ移動" Tag="{x:Static m:BoundaryAction.FolderNavigation}"/>
+                    </ComboBox>
+                    <Separator/>
+                    <TextBlock Text="新しいバージョンがあります →" Foreground="#4fc1ff" Cursor="Hand" VerticalAlignment="Center" Margin="4,0"
+                               MouseLeftButtonDown="UpdateBanner_Click"
+                               Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BoolToVis}}"/>
+                    <Button Content="?" Style="{StaticResource ToolButton}" Click="About_Click" ToolTip="バージョン情報" HorizontalAlignment="Right"/>
+                </StackPanel>
+
+                <!-- フィルター行(トグルON時のみ表示) -->
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,0"
+                            Visibility="{Binding IsFilterPanelVisible, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="明るさ" VerticalAlignment="Center" Margin="4,0,2,0"/>
+                    <Slider Minimum="-100" Maximum="100" Value="{Binding Brightness}" Width="90" VerticalAlignment="Center"/>
+                    <TextBlock Text="コントラスト" VerticalAlignment="Center" Margin="8,0,2,0"/>
+                    <Slider Minimum="-100" Maximum="100" Value="{Binding Contrast}" Width="90" VerticalAlignment="Center"/>
+                    <TextBlock Text="彩度" VerticalAlignment="Center" Margin="8,0,2,0"/>
+                    <Slider Minimum="-100" Maximum="100" Value="{Binding Saturation}" Width="90" VerticalAlignment="Center"/>
+                    <TextBlock Text="シャープネス" VerticalAlignment="Center" Margin="8,0,2,0"/>
+                    <Slider Minimum="0" Maximum="100" Value="{Binding Sharpness}" Width="90" VerticalAlignment="Center"/>
+                    <Button Content="リセット" Style="{StaticResource ToolButton}" Command="{Binding ResetFiltersCommand}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- コンテンツ領域: 画像を全面表示し、サイドバー/ステータスバーはその上にフロート -->
+        <Grid Grid.Row="1">
+            <!-- メイン画像表示エリア -->
+            <ScrollViewer x:Name="ImageScrollViewer" Background="#1e1e1e"
+                          HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                          ScrollChanged="ImageScrollViewer_ScrollChanged"
+                          PreviewMouseLeftButtonDown="ImageScrollViewer_PreviewMouseLeftButtonDown"
+                          PreviewMouseLeftButtonUp="ImageScrollViewer_PreviewMouseLeftButtonUp"
+                          PreviewMouseMove="ImageScrollViewer_PreviewMouseMove"
+                          PreviewMouseRightButtonDown="ImageScrollViewer_PreviewMouseRightButtonDown">
+                <Grid x:Name="ImageViewportGrid"
+                      MinWidth="{Binding ViewportWidth, ElementName=ImageScrollViewer}"
+                      MinHeight="{Binding ViewportHeight, ElementName=ImageScrollViewer}">
+                    <StackPanel x:Name="PageStack" Orientation="Horizontal"
+                                HorizontalAlignment="Center" VerticalAlignment="Center"
+                                FlowDirection="{Binding IsRightToLeft, Converter={StaticResource BoolToFlow}}">
+                        <Image x:Name="PrimaryImageControl" Source="{Binding RenderedPrimaryImage}" Stretch="None" Margin="2">
+                            <Image.LayoutTransform>
+                                <TransformGroup>
+                                    <RotateTransform Angle="{Binding RotationAngle}"/>
+                                    <ScaleTransform ScaleX="{Binding EffectiveZoom}" ScaleY="{Binding EffectiveZoom}"/>
+                                </TransformGroup>
+                            </Image.LayoutTransform>
+                        </Image>
+                        <Image x:Name="SecondaryImageControl" Source="{Binding RenderedSecondaryImage}" Stretch="None" Margin="2"
+                               Visibility="{Binding IsSpreadMode, Converter={StaticResource BoolToVis}}">
+                            <Image.LayoutTransform>
+                                <TransformGroup>
+                                    <RotateTransform Angle="{Binding RotationAngle}"/>
+                                    <ScaleTransform ScaleX="{Binding EffectiveZoom}" ScaleY="{Binding EffectiveZoom}"/>
+                                </TransformGroup>
+                            </Image.LayoutTransform>
+                        </Image>
+                    </StackPanel>
+                </Grid>
+            </ScrollViewer>
+
+            <!-- ステータスバー: 右下に画像番号/ファイル名を薄い帯でフロート表示 -->
+            <Border VerticalAlignment="Bottom" HorizontalAlignment="Right" Background="#40252526" Padding="8,4"
+                    CornerRadius="3" Margin="0,0,8,8"
+                    Panel.ZIndex="5" Visibility="{Binding IsFullScreen, Converter={StaticResource InverseBoolToVis}}">
+                <TextBlock Text="{Binding StatusText}" FontSize="12"/>
+            </Border>
+
+            <!-- サイドバー: 左端にマウスを合わせると展開するフロートパネル(一覧固定ONで常時表示、全画面時は完全非表示) -->
+            <Border x:Name="SidebarPanel" Width="240" HorizontalAlignment="Left" VerticalAlignment="Stretch"
+                    Background="#e6252526" Panel.ZIndex="10"
+                    Visibility="{Binding IsFullScreen, Converter={StaticResource InverseBoolToVis}}">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Margin" Value="-228,0,0,0"/>
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Margin" Value="0"/>
+                            </Trigger>
+                            <DataTrigger Binding="{Binding IsSidebarVisible}" Value="True">
+                                <Setter Property="Margin" Value="0"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <TabControl Background="Transparent" BorderThickness="0">
+                    <TabItem Header="ページ">
+                        <ListBox x:Name="ThumbnailList" ItemsSource="{Binding Entries}" Background="Transparent"
+                                 BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 SelectionChanged="ThumbnailList_SelectionChanged">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" Margin="4">
+                                        <Image Source="{Binding FullPath, Converter={StaticResource PathToThumb}}"
+                                               Width="48" Height="64" Stretch="Uniform"/>
+                                        <TextBlock Text="{Binding FileName}" FontSize="11"
+                                                   Margin="6,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </TabItem>
+                    <TabItem Header="フォルダ">
+                        <TreeView x:Name="FolderTree" Background="Transparent" BorderThickness="0"
+                                  SelectedItemChanged="FolderTree_SelectedItemChanged"/>
+                    </TabItem>
+                    <TabItem Header="お気に入り">
+                        <ListBox x:Name="FavoriteList" ItemsSource="{Binding FavoriteDirectories}" Background="Transparent"
+                                 BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 SelectionChanged="FavoriteList_SelectionChanged">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding Converter={StaticResource PathToName}}"
+                                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding}"/>
+                                        <Button Grid.Column="1" Content="✕" Style="{StaticResource MiniButton}"
+                                                Command="{Binding DataContext.RemoveFavoriteCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                CommandParameter="{Binding}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </TabItem>
+                </TabControl>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build
+        run: dotnet build src/Hamana.Viewer/Hamana.Viewer.csproj -c Release
+
+      - name: Compute next version
+        id: version
+        shell: pwsh
+        run: |
+          $csprojContent = Get-Content src/Hamana.Viewer/Hamana.Viewer.csproj -Raw
+          $current = [version]([regex]::Match($csprojContent, '<Version>([^<]+)</Version>').Groups[1].Value)
+
+          $tags = git tag --list 'v*' | ForEach-Object {
+            try { [version]($_ -replace '^v', '') } catch { $null }
+          } | Where-Object { $_ } | Sort-Object -Descending
+
+          $latestTag = if ($tags.Count -gt 0) { $tags[0] } else { [version]'0.0.0' }
+
+          if ($current -gt $latestTag) {
+            $next = $current
+          } else {
+            $nextBuild = $latestTag.Build + 1
+            if ($nextBuild -gt 9) {
+              $next = [version]"$($latestTag.Major).$($latestTag.Minor + 1).0"
+            } else {
+              $next = [version]"$($latestTag.Major).$($latestTag.Minor).$nextBuild"
+            }
+          }
+
+          $nextStr = "$($next.Major).$($next.Minor).$($next.Build)"
+          Write-Output "version=$nextStr" >> $env:GITHUB_OUTPUT
+
+      - name: Update version files
+        shell: pwsh
+        run: |
+          $v = "${{ steps.version.outputs.version }}"
+
+          (Get-Content version.json -Raw) -replace '"version":\s*"[^"]+"', "`"version`": `"$v`"" |
+            Set-Content version.json -NoNewline
+
+          (Get-Content src/Hamana.Viewer/Hamana.Viewer.csproj -Raw) -replace '<Version>[^<]+</Version>', "<Version>$v</Version>" |
+            Set-Content src/Hamana.Viewer/Hamana.Viewer.csproj -NoNewline
+
+          (Get-Content installer/setup.iss -Raw) -replace '#define MyAppVersion "[^"]+"', "#define MyAppVersion `"$v`"" |
+            Set-Content installer/setup.iss -NoNewline
+
+      - name: Commit version bump and tag
+        shell: pwsh
+        run: |
+          $v = "${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add version.json src/Hamana.Viewer/Hamana.Viewer.csproj installer/setup.iss
+          git commit -m "v${v}: バージョン更新 (CI自動)"
+          git tag "v$v"
+          git push origin HEAD:master
+          git push origin "v$v"
+
+      - name: Publish self-contained win-x64
+        run: dotnet publish src/Hamana.Viewer/Hamana.Viewer.csproj -c Release -r win-x64 --self-contained true
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\setup.iss
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $v = "${{ steps.version.outputs.version }}"
+          gh release create "v$v" installer/Output/*.exe --title "v$v" --generate-notes

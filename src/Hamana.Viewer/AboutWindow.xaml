@@ -1,0 +1,17 @@
+<Window x:Class="Hamana.Viewer.AboutWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="バージョン情報" Height="240" Width="360"
+        Background="#1e1e1e" Foreground="#e0e0e0"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        WindowStyle="ToolWindow">
+    <StackPanel Margin="20" VerticalAlignment="Center">
+        <TextBlock Text="YMB イメージビューワー" FontSize="18" FontWeight="Bold" Foreground="#e0e0e0" HorizontalAlignment="Center"/>
+        <TextBlock x:Name="VersionText" Text="v1.0.0" Foreground="#cccccc" HorizontalAlignment="Center" Margin="0,4,0,16"/>
+        <TextBlock Text="高速・快適な画像/コミックビューア" Foreground="#cccccc" HorizontalAlignment="Center" Margin="0,0,0,4"/>
+        <TextBlock Text="https://github.com/yumebi/ymb_viewer" Foreground="#4fc1ff" Cursor="Hand"
+                    HorizontalAlignment="Center" MouseLeftButtonDown="RepoLink_Click" Margin="0,0,0,4"/>
+        <TextBlock Text="MIT License © 2026 yumebi" Foreground="#888888" HorizontalAlignment="Center" FontSize="11" Margin="0,8,0,16"/>
+        <Button Content="閉じる" Width="80" HorizontalAlignment="Center" Click="Close_Click"/>
+    </StackPanel>
+</Window>
