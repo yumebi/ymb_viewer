@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.IO;
 using System.Windows.Media.Imaging;
 using Hamana.Viewer.Models;
 
@@ -10,9 +11,9 @@ public sealed class ImagePreloadCache
 {
     private readonly ConcurrentDictionary<string, Task<BitmapImage?>> _cache = new();
 
-    public Task<BitmapImage?> GetAsync(string path)
+    public Task<BitmapImage?> GetAsync(ImageEntry entry)
     {
-        return _cache.GetOrAdd(path, LoadAsync);
+        return _cache.GetOrAdd(entry.CacheKey, _ => LoadAsync(entry));
     }
 
     public void PreloadAround(IReadOnlyList<ImageEntry> entries, int centerIndex, int radius = 2)
@@ -25,9 +26,9 @@ public sealed class ImagePreloadCache
 
         for (int i = lo; i <= hi; i++)
         {
-            var path = entries[i].FullPath;
-            keep.Add(path);
-            _ = GetAsync(path);
+            var entry = entries[i];
+            keep.Add(entry.CacheKey);
+            _ = GetAsync(entry);
         }
 
         foreach (var key in _cache.Keys)
@@ -39,7 +40,7 @@ public sealed class ImagePreloadCache
         }
     }
 
-    private static Task<BitmapImage?> LoadAsync(string path)
+    private static Task<BitmapImage?> LoadAsync(ImageEntry entry)
     {
         return Task.Run(() =>
         {
@@ -48,7 +49,21 @@ public sealed class ImagePreloadCache
                 var bitmap = new BitmapImage();
                 bitmap.BeginInit();
                 bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                bitmap.UriSource = new Uri(path, UriKind.Absolute);
+
+                if (entry.ArchiveEntryKey is null)
+                {
+                    bitmap.UriSource = new Uri(entry.FullPath, UriKind.Absolute);
+                }
+                else
+                {
+                    var bytes = ArchiveImageService.ReadEntryBytes(entry.FullPath, entry.ArchiveEntryKey);
+                    using var ms = new MemoryStream(bytes);
+                    bitmap.StreamSource = ms;
+                    bitmap.EndInit();
+                    bitmap.Freeze();
+                    return (BitmapImage?)bitmap;
+                }
+
                 bitmap.EndInit();
                 bitmap.Freeze();
                 return (BitmapImage?)bitmap;

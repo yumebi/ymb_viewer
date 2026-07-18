@@ -1,32 +1,17 @@
 using System.Globalization;
-using System.IO;
 using System.Windows.Data;
-using System.Windows.Media.Imaging;
+using Hamana.Viewer.Models;
+using Hamana.Viewer.Services;
 
 namespace Hamana.Viewer.Converters;
 
-// サムネイル一覧用: フルサイズを読まずに小さくデコードして表示を軽くする。
+// サムネイル一覧用: ディスクキャッシュ経由で小さいデコード結果を返す(ImageEntryを丸ごと受け取る)。
 public sealed class PathToThumbnailConverter : IValueConverter
 {
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
-        if (value is not string path || !File.Exists(path)) return null;
-
-        try
-        {
-            var bitmap = new BitmapImage();
-            bitmap.BeginInit();
-            bitmap.CacheOption = BitmapCacheOption.OnLoad;
-            bitmap.DecodePixelWidth = 120;
-            bitmap.UriSource = new Uri(path, UriKind.Absolute);
-            bitmap.EndInit();
-            bitmap.Freeze();
-            return bitmap;
-        }
-        catch
-        {
-            return null;
-        }
+        if (value is not ImageEntry entry) return null;
+        return ThumbnailCacheService.GetOrCreate(entry);
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>

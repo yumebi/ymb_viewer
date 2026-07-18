@@ -184,6 +184,20 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OpenArchive_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "アーカイブを選択",
+            Filter = "対応アーカイブ (*.zip;*.cbz;*.rar;*.cbr;*.7z;*.cb7)|*.zip;*.cbz;*.rar;*.cbr;*.7z;*.cb7|すべてのファイル (*.*)|*.*"
+        };
+
+        if (dialog.ShowDialog(this) == true)
+        {
+            _viewModel.LoadArchive(dialog.FileName);
+        }
+    }
+
     private void About_Click(object sender, RoutedEventArgs e)
     {
         new AboutWindow(_viewModel.AppVersion) { Owner = this }.ShowDialog();

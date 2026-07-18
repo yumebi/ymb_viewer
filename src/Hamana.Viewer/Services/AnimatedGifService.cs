@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media.Imaging;
+using Hamana.Viewer.Models;
 using GdiBitmap = System.Drawing.Bitmap;
 using GdiFrameDimension = System.Drawing.Imaging.FrameDimension;
 
@@ -15,16 +16,19 @@ public static class AnimatedGifService
 {
     private const int PropertyTagFrameDelay = 0x5100;
 
-    public static List<GifFrame>? TryLoadFrames(string path)
+    public static List<GifFrame>? TryLoadFrames(ImageEntry entry)
     {
-        if (!string.Equals(Path.GetExtension(path), ".gif", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(Path.GetExtension(entry.FileName), ".gif", StringComparison.OrdinalIgnoreCase))
         {
             return null;
         }
 
         try
         {
-            using var bitmap = new GdiBitmap(path);
+            using GdiBitmap bitmap = entry.ArchiveEntryKey is null
+                ? new GdiBitmap(entry.FullPath)
+                : new GdiBitmap(new MemoryStream(ArchiveImageService.ReadEntryBytes(entry.FullPath, entry.ArchiveEntryKey)));
+
             var dimension = new GdiFrameDimension(bitmap.FrameDimensionsList[0]);
             int frameCount = bitmap.GetFrameCount(dimension);
             if (frameCount <= 1) return null;

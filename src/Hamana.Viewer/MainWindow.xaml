@@ -184,6 +184,8 @@
             <StackPanel>
                 <StackPanel Orientation="Horizontal">
                     <Button Content="開く" Style="{StaticResource ToolButton}" Click="OpenFolder_Click"/>
+                    <Button Content="アーカイブを開く" Style="{StaticResource ToolButton}" Click="OpenArchive_Click"
+                            ToolTip="zip/cbz/rar/cbr/7z/cb7 を解凍せず閲覧"/>
                     <Button Content="★ お気に入り追加" Style="{StaticResource ToolButton}" Command="{Binding AddFavoriteCommand}"/>
                     <Separator/>
                     <Button Content="－" Style="{StaticResource ToolButton}" Command="{Binding ZoomOutCommand}" ToolTip="縮小 (-)"/>
@@ -321,7 +323,7 @@
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" Margin="4">
-                                        <Image Source="{Binding FullPath, Converter={StaticResource PathToThumb}}"
+                                        <Image Source="{Binding Converter={StaticResource PathToThumb}}"
                                                Width="48" Height="64" Stretch="Uniform"/>
                                         <TextBlock Text="{Binding FileName}" FontSize="11"
                                                    Margin="6,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>

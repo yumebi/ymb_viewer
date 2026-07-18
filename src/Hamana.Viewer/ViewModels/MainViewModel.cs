@@ -30,6 +30,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private BitmapImage? _secondaryImage;
     private string _statusText = "フォルダを開いてください (Ctrl+O)";
     private string? _folderPath;
+    private string? _archivePath;
 
     private double _rotationAngle;
     private double _zoomMultiplier = 1.0;
@@ -62,7 +63,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ObservableCollection<ImageEntry> Entries { get; } = new();
     public ObservableCollection<string> FavoriteDirectories { get; } = new();
 
-    public string? CurrentFolderPath => _folderPath;
+    // お気に入り登録/設定保存に使う「現在開いているコンテナ」のパス(フォルダ or アーカイブファイル)。
+    public string? CurrentContainerPath => _archivePath ?? _folderPath;
 
     public string AppVersion { get; } =
         Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.0";
@@ -365,12 +367,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
         AddFavoriteCommand = new RelayCommand(
             _ =>
             {
-                if (_folderPath is not null && !FavoriteDirectories.Contains(_folderPath, StringComparer.OrdinalIgnoreCase))
+                var path = CurrentContainerPath;
+                if (path is not null && !FavoriteDirectories.Contains(path, StringComparer.OrdinalIgnoreCase))
                 {
-                    FavoriteDirectories.Add(_folderPath);
+                    FavoriteDirectories.Add(path);
                 }
             },
-            _ => _folderPath is not null);
+            _ => CurrentContainerPath is not null);
 
         RemoveFavoriteCommand = new RelayCommand(p =>
         {
@@ -379,18 +382,36 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
         GoToFavoriteCommand = new RelayCommand(p =>
         {
-            if (p is string path && Directory.Exists(path)) LoadFolder(path);
+            if (p is not string path) return;
+
+            if (Directory.Exists(path)) LoadFolder(path);
+            else if (File.Exists(path) && ArchiveImageService.IsSupportedArchive(path)) LoadArchive(path);
         });
     }
 
     public void LoadFolder(string folderPath)
     {
         var entries = FolderImageService.LoadFolder(folderPath, SortMode, SortDescending);
-        Entries.Clear();
-        foreach (var e in entries) Entries.Add(e);
-
         _folderPath = folderPath;
-        SetIndex(Entries.Count > 0 ? 0 : -1);
+        _archivePath = null;
+        ReplaceEntries(entries, preserveSelection: false);
+    }
+
+    public void LoadArchive(string archivePath)
+    {
+        List<ImageEntry> entries;
+        try
+        {
+            entries = ArchiveImageService.ListImages(archivePath, SortMode, SortDescending);
+        }
+        catch
+        {
+            entries = new List<ImageEntry>();
+        }
+
+        _folderPath = null;
+        _archivePath = archivePath;
+        ReplaceEntries(entries, preserveSelection: false);
     }
 
     public void OpenPath(string path)
@@ -398,6 +419,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (Directory.Exists(path))
         {
             LoadFolder(path);
+        }
+        else if (File.Exists(path) && ArchiveImageService.IsSupportedArchive(path))
+        {
+            LoadArchive(path);
         }
         else if (File.Exists(path) && FolderImageService.IsSupportedImage(path))
         {
@@ -410,17 +435,41 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void Resort()
     {
+        if (_archivePath is not null)
+        {
+            List<ImageEntry> archiveEntries;
+            try
+            {
+                archiveEntries = ArchiveImageService.ListImages(_archivePath, SortMode, SortDescending);
+            }
+            catch
+            {
+                archiveEntries = new List<ImageEntry>();
+            }
+
+            ReplaceEntries(archiveEntries, preserveSelection: true);
+            return;
+        }
+
         if (_folderPath is null) return;
 
-        string? currentPath = CurrentIndex >= 0 && CurrentIndex < Entries.Count ? Entries[CurrentIndex].FullPath : null;
-
         var entries = FolderImageService.LoadFolder(_folderPath, SortMode, SortDescending);
+        ReplaceEntries(entries, preserveSelection: true);
+    }
+
+    // 新しいエントリ一覧を反映する。preserveSelection時は元のCacheKeyに一致するページへ復帰を試みる。
+    private void ReplaceEntries(List<ImageEntry> entries, bool preserveSelection)
+    {
+        string? currentKey = preserveSelection && CurrentIndex >= 0 && CurrentIndex < Entries.Count
+            ? Entries[CurrentIndex].CacheKey
+            : null;
+
         Entries.Clear();
         foreach (var e in entries) Entries.Add(e);
 
-        int newIndex = currentPath is null
-            ? -1
-            : Entries.ToList().FindIndex(e => string.Equals(e.FullPath, currentPath, StringComparison.OrdinalIgnoreCase));
+        int newIndex = currentKey is null
+            ? (Entries.Count > 0 ? 0 : -1)
+            : Entries.ToList().FindIndex(e => e.CacheKey == currentKey);
 
         SetIndex(newIndex >= 0 ? newIndex : (Entries.Count > 0 ? 0 : -1));
     }
@@ -616,19 +665,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private void SetIndex(int index)
     {
         CurrentIndex = index;
-        RotationAngle = 0;
-        ZoomMultiplier = 1.0;
+        // 回転/ズームのリセットは新しい画像の読み込みが終わってから行う(UpdateCurrentImagesAsync内)。
+        // ここで即リセットすると、旧画像がFitサイズへ縮んでから新画像に切り替わる「ちらつき」が出る。
         _ = UpdateCurrentImagesAsync();
     }
 
     private async Task UpdateCurrentImagesAsync()
     {
-        StopGifAnimation();
-
         if (CurrentIndex < 0 || CurrentIndex >= Entries.Count)
         {
+            StopGifAnimation();
             PrimaryImage = null;
             SecondaryImage = null;
+            RotationAngle = 0;
+            ZoomMultiplier = 1.0;
             StatusText = "フォルダを開いてください (Ctrl+O)";
             return;
         }
@@ -636,12 +686,28 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _cache.PreloadAround(Entries, CurrentIndex);
 
         var primaryEntry = Entries[CurrentIndex];
-        PrimaryImage = await _cache.GetAsync(primaryEntry.FullPath);
+
+        // 新しい画像が用意できるまでawaitする間、旧ページの表示(画像/回転/ズーム)には一切触れない。
+        // ここで先にリセットしてしまうと、旧画像がFitサイズへ縮んでから新画像に切り替わる
+        // 「ちらつき」が発生するため。
+        var newPrimary = await _cache.GetAsync(primaryEntry);
+        var gifFrames = await Task.Run(() => AnimatedGifService.TryLoadFrames(primaryEntry));
+
+        // await中にさらにページ送りされていたら、この結果はもう不要。
+        if (CurrentIndex < 0 || CurrentIndex >= Entries.Count || !ReferenceEquals(Entries[CurrentIndex], primaryEntry))
+        {
+            return;
+        }
+
+        StopGifAnimation();
+        PrimaryImage = newPrimary;
+        RotationAngle = 0;
+        ZoomMultiplier = 1.0;
 
         if (IsSpreadMode && CurrentIndex + 1 < Entries.Count)
         {
             var secondaryEntry = Entries[CurrentIndex + 1];
-            SecondaryImage = await _cache.GetAsync(secondaryEntry.FullPath);
+            SecondaryImage = await _cache.GetAsync(secondaryEntry);
             StatusText = $"{CurrentIndex + 1}-{CurrentIndex + 2} / {Entries.Count}  {primaryEntry.FileName}";
         }
         else
@@ -650,9 +716,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             StatusText = $"{CurrentIndex + 1} / {Entries.Count}  {primaryEntry.FileName}";
         }
 
-        var gifFrames = await Task.Run(() => AnimatedGifService.TryLoadFrames(primaryEntry.FullPath));
-        if (gifFrames is { Count: > 1 } && CurrentIndex >= 0 && CurrentIndex < Entries.Count
-            && ReferenceEquals(Entries[CurrentIndex], primaryEntry))
+        if (gifFrames is { Count: > 1 })
         {
             StartGifAnimation(gifFrames);
             return;
@@ -742,7 +806,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         return new AppSettings
         {
-            LastFolderPath = _folderPath,
+            LastFolderPath = CurrentContainerPath,
             LastFileName = CurrentIndex >= 0 && CurrentIndex < Entries.Count ? Entries[CurrentIndex].FileName : null,
             SortMode = SortMode,
             SortDescending = SortDescending,
@@ -779,12 +843,23 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    // 保存されていた前回のフォルダ/ページを復元する(設定適用後に呼ぶ)。
+    // 保存されていた前回のフォルダ/アーカイブ/ページを復元する(設定適用後に呼ぶ)。
     public void RestoreLastFolder(AppSettings settings)
     {
-        if (settings.LastFolderPath is null || !Directory.Exists(settings.LastFolderPath)) return;
+        if (settings.LastFolderPath is null) return;
 
-        LoadFolder(settings.LastFolderPath);
+        if (Directory.Exists(settings.LastFolderPath))
+        {
+            LoadFolder(settings.LastFolderPath);
+        }
+        else if (File.Exists(settings.LastFolderPath) && ArchiveImageService.IsSupportedArchive(settings.LastFolderPath))
+        {
+            LoadArchive(settings.LastFolderPath);
+        }
+        else
+        {
+            return;
+        }
 
         if (settings.LastFileName is not null)
         {
