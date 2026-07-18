@@ -13,6 +13,7 @@
         Drop="Window_Drop"
         PreviewMouseWheel="Window_PreviewMouseWheel"
         PreviewKeyDown="Window_PreviewKeyDown"
+        SizeChanged="Window_SizeChanged"
         WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
@@ -264,9 +265,9 @@
                           PreviewMouseLeftButtonUp="ImageScrollViewer_PreviewMouseLeftButtonUp"
                           PreviewMouseMove="ImageScrollViewer_PreviewMouseMove"
                           PreviewMouseRightButtonDown="ImageScrollViewer_PreviewMouseRightButtonDown">
-                <Grid x:Name="ImageViewportGrid"
-                      MinWidth="{Binding ViewportWidth, ElementName=ImageScrollViewer}"
-                      MinHeight="{Binding ViewportHeight, ElementName=ImageScrollViewer}">
+                <!-- HorizontalContentAlignment=Centerは効かない(左上に寄る)ため、
+                     ImageViewportGridのMinWidth/HeightをActualWidth/Height基準でコード側から設定して中央寄せする -->
+                <Grid x:Name="ImageViewportGrid">
                     <StackPanel x:Name="PageStack" Orientation="Horizontal"
                                 HorizontalAlignment="Center" VerticalAlignment="Center"
                                 FlowDirection="{Binding IsRightToLeft, Converter={StaticResource BoolToFlow}}">

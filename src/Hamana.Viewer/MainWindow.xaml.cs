@@ -32,10 +32,15 @@ public partial class MainWindow : Window
         var settings = AppSettingsService.Load();
         ApplyWindowSettings(settings);
         _viewModel.ApplySettingsBeforeLoad(settings);
-        _viewModel.RestoreLastFolder(settings);
 
         Closing += MainWindow_Closing;
-        Loaded += (_, _) => _ = _viewModel.CheckForUpdatesAsync();
+        Loaded += (_, _) =>
+        {
+            // ウィンドウ表示・レイアウト確定前に画像を読み込むと、ビューポートが未確定(0や既定値)の
+            // まま最初のFit計算が行われてしまうため、Loaded後に復元する。
+            _viewModel.RestoreLastFolder(settings);
+            _ = _viewModel.CheckForUpdatesAsync();
+        };
     }
 
     private void ApplyWindowSettings(AppSettings settings)
@@ -231,6 +236,9 @@ public partial class MainWindow : Window
         }
     }
 
+    // ウインドウの最大化/復元/リサイズを取りこぼさないための安全網。
+    private void Window_SizeChanged(object sender, SizeChangedEventArgs e) => RecalculateFit();
+
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(MainViewModel.PrimaryImage) or nameof(MainViewModel.SecondaryImage)
@@ -261,6 +269,13 @@ public partial class MainWindow : Window
 
     private void RecalculateFit()
     {
+        // ImageViewportGridをビューポート以上のサイズに保つことで中央寄せを実現する。
+        // ScrollViewer.ViewportWidth/HeightへXAMLで直接バインドすると、コンテンツサイズ変化→
+        // Viewport再計算→…の循環でおかしな値に固定されることがあるため、
+        // 循環しないActualWidth/Heightをコード側から明示的に設定する。
+        ImageViewportGrid.MinWidth = ImageScrollViewer.ActualWidth;
+        ImageViewportGrid.MinHeight = ImageScrollViewer.ActualHeight;
+
         var img = _viewModel.PrimaryImage;
         if (img is null)
         {
@@ -268,33 +283,37 @@ public partial class MainWindow : Window
             return;
         }
 
-        // 画像のMargin分だけ余裕を持たせ、Fitちょうどでスクロールバーが出て
-        // ビューポート幅が変化→再計算→…と振動しないようにする。
+        // スクロールバー分(~18px)+画像のMargin分の余裕を持たせておく。
         int pageCount = _viewModel.IsSpreadMode && _viewModel.SecondaryImage != null ? 2 : 1;
-        double viewportW = Math.Max(0, ImageScrollViewer.ViewportWidth - 8) / pageCount;
-        double viewportH = Math.Max(0, ImageScrollViewer.ViewportHeight - 8);
+        double viewportW = Math.Max(0, ImageScrollViewer.ActualWidth - 24) / pageCount;
+        double viewportH = Math.Max(0, ImageScrollViewer.ActualHeight - 24);
 
-        double pixelW = img.PixelWidth;
-        double pixelH = img.PixelHeight;
+        // Stretch="None" のImageは画像のDPIメタデータを反映したサイズ(Width/Height)で描画されるため、
+        // 生ピクセル数(PixelWidth/Height)ではなくこちらを使う。96以外のDPIが埋め込まれた画像
+        // (Web由来のjpg等)だと、生ピクセル数基準で計算した倍率と実際の描画サイズがズレていた。
+        double pixelW = img.Width;
+        double pixelH = img.Height;
         FitMode mode = _viewModel.FitMode;
 
         // 単一ページ表示時のみ: 0度/90度のうちより大きく収まる方へ自動回転
+        double targetAngle = _viewModel.RotationAngle;
         if (_viewModel.IsAutoRotate && pageCount == 1)
         {
             double fit0 = ComputeFit(pixelW, pixelH, viewportW, viewportH, mode);
             double fit90 = ComputeFit(pixelH, pixelW, viewportW, viewportH, mode);
-            double targetAngle = fit90 > fit0 ? 90 : 0;
+            targetAngle = fit90 > fit0 ? 90 : 0;
 
             if (_viewModel.RotationAngle != targetAngle)
             {
+                // RotationAngle変更でこのメソッドが再入されるが、下で改めてFitScaleを
+                // targetAngle基準で確定させるので、早期returnせず必ず最後まで進める。
                 _viewModel.SetAutoRotationAngle(targetAngle);
-                return; // RotationAngle変更で再度RecalculateFitが呼ばれる
             }
         }
 
         double naturalW = pixelW;
         double naturalH = pixelH;
-        if (_viewModel.RotationAngle is 90 or 270)
+        if (targetAngle is 90 or 270)
         {
             (naturalW, naturalH) = (naturalH, naturalW);
         }
