@@ -17,6 +17,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private readonly ImagePreloadCache _cache = new();
     private readonly DispatcherTimer _slideshowTimer;
+    private readonly DispatcherTimer _gifTimer;
+    private List<GifFrame>? _currentGifFrames;
+    private int _gifFrameIndex;
 
     private int _currentIndex = -1;
     private bool _isSpreadMode;
@@ -326,6 +329,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
             _ = RefreshRenderedImagesAsync();
         };
 
+        _gifTimer = new DispatcherTimer();
+        _gifTimer.Tick += (_, _) => AdvanceGifFrame();
+
         NextPageCommand = new RelayCommand(_ => GoNext(), _ => Entries.Count > 0);
         PrevPageCommand = new RelayCommand(_ => GoPrev(), _ => Entries.Count > 0);
         ToggleSpreadCommand = new RelayCommand(_ => IsSpreadMode = !IsSpreadMode);
@@ -617,6 +623,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private async Task UpdateCurrentImagesAsync()
     {
+        StopGifAnimation();
+
         if (CurrentIndex < 0 || CurrentIndex >= Entries.Count)
         {
             PrimaryImage = null;
@@ -642,7 +650,50 @@ public sealed class MainViewModel : INotifyPropertyChanged
             StatusText = $"{CurrentIndex + 1} / {Entries.Count}  {primaryEntry.FileName}";
         }
 
+        var gifFrames = await Task.Run(() => AnimatedGifService.TryLoadFrames(primaryEntry.FullPath));
+        if (gifFrames is { Count: > 1 } && CurrentIndex >= 0 && CurrentIndex < Entries.Count
+            && ReferenceEquals(Entries[CurrentIndex], primaryEntry))
+        {
+            StartGifAnimation(gifFrames);
+            return;
+        }
+
         await RefreshRenderedImagesAsync();
+    }
+
+    // --- アニメーションGIF(ループ再生) ---
+    // アニメーション再生中はフィルターを適用しない(毎フレーム処理は重いため)。
+
+    private void StartGifAnimation(List<GifFrame> frames)
+    {
+        _currentGifFrames = frames;
+        _gifFrameIndex = 0;
+        RenderedPrimaryImage = frames[0].Image;
+        RenderedSecondaryImage = SecondaryImage;
+        ScheduleNextGifFrame();
+    }
+
+    private void ScheduleNextGifFrame()
+    {
+        if (_currentGifFrames is null) return;
+        _gifTimer.Interval = _currentGifFrames[_gifFrameIndex].Delay;
+        _gifTimer.Start();
+    }
+
+    private void AdvanceGifFrame()
+    {
+        _gifTimer.Stop();
+        if (_currentGifFrames is null) return;
+
+        _gifFrameIndex = (_gifFrameIndex + 1) % _currentGifFrames.Count;
+        RenderedPrimaryImage = _currentGifFrames[_gifFrameIndex].Image;
+        ScheduleNextGifFrame();
+    }
+
+    private void StopGifAnimation()
+    {
+        _gifTimer.Stop();
+        _currentGifFrames = null;
     }
 
     // --- ズーム倍率を任意の係数で変更(マウス中心ズーム用) ---
@@ -658,6 +709,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private async Task RefreshRenderedImagesAsync()
     {
+        if (_currentGifFrames is not null) return; // アニメーション再生中はタイマー側がRenderedPrimaryImageを管理する
+
         var primary = PrimaryImage;
         var secondary = SecondaryImage;
 
