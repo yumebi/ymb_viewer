@@ -1,5 +1,5 @@
 #define MyAppName "YMB イメージビューワー"
-#define MyAppVersion "1.0.5"
+#define MyAppVersion "1.0.6"
 #define MyAppPublisher "yumebi"
 #define MyAppExeName "Hamana.Viewer.exe"
 #define PublishDir "..\src\Hamana.Viewer\bin\Release\net8.0-windows\win-x64\publish"
