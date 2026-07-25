@@ -8,7 +8,8 @@
         xmlns:m="clr-namespace:Hamana.Viewer.Models"
         mc:Ignorable="d"
         Title="YMB イメージビューワー" Height="800" Width="1280"
-        Background="#1e1e1e"
+        Background="{DynamicResource YmbBgBrush}"
+        Foreground="{DynamicResource YmbFgBrush}"
         AllowDrop="True"
         Drop="Window_Drop"
         PreviewMouseWheel="Window_PreviewMouseWheel"
@@ -25,8 +26,8 @@
         <Style TargetType="Button" x:Key="ToolButton">
             <Setter Property="Padding" Value="8,4"/>
             <Setter Property="Margin" Value="2,0"/>
-            <Setter Property="Background" Value="#2d2d30"/>
-            <Setter Property="Foreground" Value="#e0e0e0"/>
+            <Setter Property="Background" Value="{DynamicResource YmbSurfaceBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource YmbFgBrush}"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="MinWidth" Value="28"/>
             <Setter Property="Template">
@@ -38,10 +39,10 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#3e3e42"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource YmbBorderBrush}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#0e639c"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource YmbAccentBrush}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Foreground" Value="#6d6d6d"/>
@@ -55,8 +56,8 @@
         <Style TargetType="ToggleButton" x:Key="ToolToggle">
             <Setter Property="Padding" Value="8,4"/>
             <Setter Property="Margin" Value="2,0"/>
-            <Setter Property="Background" Value="#2d2d30"/>
-            <Setter Property="Foreground" Value="#e0e0e0"/>
+            <Setter Property="Background" Value="{DynamicResource YmbSurfaceBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource YmbFgBrush}"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Template">
                 <Setter.Value>
@@ -67,10 +68,10 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#3e3e42"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource YmbBorderBrush}"/>
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#0e639c"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource YmbAccentBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -85,26 +86,29 @@
             <Setter Property="FontSize" Value="11"/>
         </Style>
 
-        <!-- ダークテーマ: 既定コントロールの文字色/選択色が背景に埋もれるため明示 -->
-        <Style TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#cccccc"/>
-        </Style>
+        <!-- ダークテーマ: 既定コントロールの文字色/選択色が背景に埋もれるため明示。
+             ここで TextBlock に Foreground を設定してはいけない。
+             Setter は継承値に勝つため、DataTemplate や ContentPresenter が作る
+             TextBlock まで同じ色に固定され、TabItem や ListBoxItem が選択時に
+             指定する文字色が届かなくなる(赤い選択地に暗い文字が残る)。
+             全体の既定色は Window の Foreground に置いてある。 -->
 
         <Style TargetType="TabItem">
-            <Setter Property="Foreground" Value="#cccccc"/>
+            <Setter Property="Foreground" Value="{DynamicResource YmbFgBrush}"/>
             <Setter Property="Padding" Value="10,6"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
-                        <Border x:Name="Bd" Background="#2d2d30" Padding="{TemplateBinding Padding}" Margin="0,0,2,0">
+                        <Border x:Name="Bd" Background="{DynamicResource YmbSurfaceBrush}" Padding="{TemplateBinding Padding}" Margin="0,0,2,0">
                             <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#3e3e42"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource YmbBorderBrush}"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#0e639c"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource YmbAccentBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource YmbAccentFgBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -113,13 +117,13 @@
         </Style>
 
         <Style TargetType="TreeView">
-            <Setter Property="Foreground" Value="#cccccc"/>
+            <Setter Property="Foreground" Value="{DynamicResource YmbFgBrush}"/>
         </Style>
         <Style TargetType="TreeViewItem">
-            <Setter Property="Foreground" Value="#cccccc"/>
+            <Setter Property="Foreground" Value="{DynamicResource YmbFgBrush}"/>
             <Style.Triggers>
                 <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Background" Value="#0e639c"/>
+                    <Setter Property="Background" Value="{DynamicResource YmbAccentBrush}"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -127,7 +131,7 @@
         <!-- 既定テンプレートは選択/非フォーカス時に薄いグレーの選択色+黒文字になり視認性が悪いため再定義 -->
         <Style TargetType="ListBoxItem">
             <Setter Property="Padding" Value="2"/>
-            <Setter Property="Foreground" Value="#cccccc"/>
+            <Setter Property="Foreground" Value="{DynamicResource YmbFgBrush}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
@@ -136,10 +140,10 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#3e3e42"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource YmbBorderBrush}"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#0e639c"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource YmbAccentBrush}"/>
                                 <Setter Property="Foreground" Value="White"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -180,7 +184,7 @@
         </Grid.RowDefinitions>
 
         <!-- ツールバー(全画面時は非表示) -->
-        <Border Grid.Row="0" Background="#2d2d30" Padding="4"
+        <Border Grid.Row="0" Background="{DynamicResource YmbSurfaceBrush}" Padding="4"
                 Visibility="{Binding IsFullScreen, Converter={StaticResource InverseBoolToVis}}">
             <StackPanel>
                 <StackPanel Orientation="Horizontal">
@@ -233,7 +237,7 @@
                         <ComboBoxItem Content="フォルダ移動" Tag="{x:Static m:BoundaryAction.FolderNavigation}"/>
                     </ComboBox>
                     <Separator/>
-                    <TextBlock Text="新しいバージョンがあります →" Foreground="#4fc1ff" Cursor="Hand" VerticalAlignment="Center" Margin="4,0"
+                    <TextBlock Text="新しいバージョンがあります →" Foreground="{DynamicResource YmbLinkBrush}" Cursor="Hand" VerticalAlignment="Center" Margin="4,0"
                                MouseLeftButtonDown="UpdateBanner_Click"
                                Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BoolToVis}}"/>
                     <Button Content="?" Style="{StaticResource ToolButton}" Click="About_Click" ToolTip="バージョン情報" HorizontalAlignment="Right"/>
@@ -258,7 +262,7 @@
         <!-- コンテンツ領域: 画像を全面表示し、サイドバー/ステータスバーはその上にフロート -->
         <Grid Grid.Row="1">
             <!-- メイン画像表示エリア -->
-            <ScrollViewer x:Name="ImageScrollViewer" Background="#1e1e1e"
+            <ScrollViewer x:Name="ImageScrollViewer" Background="{DynamicResource YmbBgBrush}"
                           HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                           ScrollChanged="ImageScrollViewer_ScrollChanged"
                           PreviewMouseLeftButtonDown="ImageScrollViewer_PreviewMouseLeftButtonDown"

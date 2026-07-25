@@ -4,6 +4,13 @@
              xmlns:local="clr-namespace:Hamana.Viewer"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
-         
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- YMB共通トークン。値の正本は ymb-ui 側にあるので、
+                     ここを直接編集せず正本を直してから配り直すこと。 -->
+                <ResourceDictionary Source="Themes/YmbTheme.xaml" />
+                <ResourceDictionary Source="Themes/YmbTheme.Dark.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
     </Application.Resources>
 </Application>
