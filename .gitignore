@@ -13,6 +13,9 @@ obj/
 # Inno Setup output
 installer/Output/
 
+# CodeGraph のインデックス(ソースから再生成される)
+.codegraph/
+
 # OS
 Thumbs.db
 .DS_Store
