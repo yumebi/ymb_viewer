@@ -203,11 +203,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private void About_Click(object sender, RoutedEventArgs e)
-    {
-        new AboutWindow(_viewModel.AppVersion) { Owner = this }.ShowDialog();
-    }
-
     private void UpdateBanner_Click(object sender, MouseButtonEventArgs e)
     {
         OpenUrl(_viewModel.UpdateUrl);

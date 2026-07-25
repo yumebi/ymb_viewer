@@ -240,7 +240,11 @@
                     <TextBlock Text="新しいバージョンがあります →" Foreground="{DynamicResource YmbLinkBrush}" Cursor="Hand" VerticalAlignment="Center" Margin="4,0"
                                MouseLeftButtonDown="UpdateBanner_Click"
                                Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BoolToVis}}"/>
-                    <Button Content="?" Style="{StaticResource ToolButton}" Click="About_Click" ToolTip="バージョン情報" HorizontalAlignment="Right"/>
+                    <!-- 他のYMBアプリと同じく、専用ダイアログを開かせずガワに常時表示する -->
+                    <TextBlock Text="{Binding AppVersion, StringFormat={}v{0}}"
+                               Foreground="{DynamicResource YmbFgMutedBrush}"
+                               FontSize="{StaticResource YmbFontSizeSmall}"
+                               VerticalAlignment="Center" Margin="6,0,4,0" HorizontalAlignment="Right"/>
                 </StackPanel>
 
                 <!-- フィルター行(トグルON時のみ表示) -->
