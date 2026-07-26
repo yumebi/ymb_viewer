@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
@@ -13,7 +13,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.Drawing.Common" Version="8.0.10" />
+    <!-- System.Drawing.Common は .NET 10 の Windows デスクトップに含まれるため
+         パッケージ参照は不要(NU1510)。GIFアニメの処理で System.Drawing を使う。 -->
     <PackageReference Include="SharpCompress" Version="1.0.0" />
   </ItemGroup>
 
