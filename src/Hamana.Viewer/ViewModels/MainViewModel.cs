@@ -10,7 +10,7 @@ using Hamana.Viewer.Services;
 
 namespace Hamana.Viewer.ViewModels;
 
-public sealed class MainViewModel : INotifyPropertyChanged
+public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 {
     private const double MinZoom = 0.1;
     private const double MaxZoom = 8.0;
@@ -18,6 +18,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly ImagePreloadCache _cache = new();
     private readonly DispatcherTimer _slideshowTimer;
     private readonly DispatcherTimer _gifTimer;
+    private readonly DispatcherTimer _watchDebounce;
+    private FileSystemWatcher? _folderWatcher;
     private List<GifFrame>? _currentGifFrames;
     private int _gifFrameIndex;
 
@@ -26,8 +28,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private bool _isSidebarVisible;
     private bool _isRightToLeft = true;
     private bool _isFullScreen;
-    private BitmapImage? _primaryImage;
-    private BitmapImage? _secondaryImage;
+    private BitmapSource? _primaryImage;
+    private BitmapSource? _secondaryImage;
     private string _statusText = "フォルダを開いてください (Ctrl+O)";
     private string? _folderPath;
     private string? _archivePath;
@@ -62,6 +64,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public ObservableCollection<ImageEntry> Entries { get; } = new();
     public ObservableCollection<string> FavoriteDirectories { get; } = new();
+
+    /// <summary>重複検出の結果。要素は重複した画像のグループ。</summary>
+    public ObservableCollection<DuplicateGroup> DuplicateGroups { get; } = new();
 
     // お気に入り登録/設定保存に使う「現在開いているコンテナ」のパス(フォルダ or アーカイブファイル)。
     public string? CurrentContainerPath => _archivePath ?? _folderPath;
@@ -105,13 +110,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
         set => SetField(ref _isRightToLeft, value);
     }
 
-    public BitmapImage? PrimaryImage
+    public BitmapSource? PrimaryImage
     {
         get => _primaryImage;
         private set => SetField(ref _primaryImage, value);
     }
 
-    public BitmapImage? SecondaryImage
+    public BitmapSource? SecondaryImage
     {
         get => _secondaryImage;
         private set => SetField(ref _secondaryImage, value);
@@ -224,6 +229,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
         set => SetField(ref _isWheelZoomMode, value);
     }
 
+    // ON時: 開いているフォルダの内容変化(追加/削除/リネーム)を監視し、自動で一覧へ反映する。
+    private bool _isWatchFolder = true;
+    public bool IsWatchFolder
+    {
+        get => _isWatchFolder;
+        set
+        {
+            if (SetField(ref _isWatchFolder, value))
+            {
+                if (value) StartFolderWatch();
+                else StopFolderWatch();
+            }
+        }
+    }
+
     // 先頭/末尾到達時の挙動。Loop=先頭⇔末尾を周回、FolderNavigation=前後のフォルダへ移動。
     public BoundaryAction BoundaryAction
     {
@@ -318,6 +338,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public RelayCommand AddFavoriteCommand { get; }
     public RelayCommand RemoveFavoriteCommand { get; }
     public RelayCommand GoToFavoriteCommand { get; }
+    public RelayCommand DetectDuplicatesCommand { get; }
+    public RelayCommand CompareGroupCommand { get; }
 
     public MainViewModel()
     {
@@ -333,6 +355,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
         _gifTimer = new DispatcherTimer();
         _gifTimer.Tick += (_, _) => AdvanceGifFrame();
+
+        // フォルダ監視の変更イベントは短時間に連続で来るため、デバウンスしてから再読込する。
+        _watchDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+        _watchDebounce.Tick += (_, _) =>
+        {
+            _watchDebounce.Stop();
+            if (_folderWatcher is not null)
+                Resort();
+        };
 
         NextPageCommand = new RelayCommand(_ => GoNext(), _ => Entries.Count > 0);
         PrevPageCommand = new RelayCommand(_ => GoPrev(), _ => Entries.Count > 0);
@@ -387,6 +418,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (Directory.Exists(path)) LoadFolder(path);
             else if (File.Exists(path) && ArchiveImageService.IsSupportedArchive(path)) LoadArchive(path);
         });
+
+        DetectDuplicatesCommand = new RelayCommand(_ => _ = DetectDuplicatesAsync());
+
+        CompareGroupCommand = new RelayCommand(p =>
+        {
+            if (p is DuplicateGroup { Entries.Count: >= 2 } group)
+                ShowComparison(group.Entries[0], group.Entries[1]);
+        });
     }
 
     public void LoadFolder(string folderPath)
@@ -395,6 +434,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _folderPath = folderPath;
         _archivePath = null;
         ReplaceEntries(entries, preserveSelection: false);
+        StartFolderWatch();
     }
 
     public void LoadArchive(string archivePath)
@@ -412,6 +452,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _folderPath = null;
         _archivePath = archivePath;
         ReplaceEntries(entries, preserveSelection: false);
+        StopFolderWatch();
     }
 
     public void OpenPath(string path)
@@ -800,6 +841,156 @@ public sealed class MainViewModel : INotifyPropertyChanged
             : await Task.Run(() => ImageFilterService.Apply(secondary, brightness, contrast, saturation, sharpness));
     }
 
+    // --- フォルダ自動監視 ---
+
+    // 開いているフォルダの画像の追加/削除/リネームを監視する。アーカイブ表示中は停止。
+    private void StartFolderWatch()
+    {
+        if (!IsWatchFolder || _folderPath is null || !Directory.Exists(_folderPath))
+            return;
+
+        StopFolderWatch();
+        try
+        {
+            var watcher = new FileSystemWatcher(_folderPath)
+            {
+                Filter = "*.*",
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+                IncludeSubdirectories = false,
+                EnableRaisingEvents = true,
+            };
+            watcher.Created += OnFolderChanged;
+            watcher.Deleted += OnFolderChanged;
+            watcher.Renamed += OnFolderChanged;
+            watcher.Error += (_, _) =>
+            {
+                // フォルダ消失などで監視が効かなくなったら黙って止める
+                try { watcher.EnableRaisingEvents = false; } catch { /* 無視 */ }
+            };
+            _folderWatcher = watcher;
+        }
+        catch
+        {
+            // 監視できないフォルダでも表示自体は続ける
+        }
+    }
+
+    private void StopFolderWatch()
+    {
+        if (_folderWatcher is not null)
+        {
+            _folderWatcher.EnableRaisingEvents = false;
+            _folderWatcher.Dispose();
+            _folderWatcher = null;
+        }
+        _watchDebounce.Stop();
+    }
+
+    private void OnFolderChanged(object sender, FileSystemEventArgs e)
+    {
+        // 監視イベントはバックグラウンドスレッドから来るためUIスレッドへ委譲してから
+        // デバウンスを再開する。
+        if (!_watchDebounce.Dispatcher.CheckAccess())
+        {
+            _watchDebounce.Dispatcher.BeginInvoke(() => OnFolderChanged(sender, e));
+            return;
+        }
+        _watchDebounce.Stop();
+        _watchDebounce.Start();
+    }
+
+    // --- 重複検出 / 比較 ---
+
+    /// <summary>
+    /// 現在の一覧から内容が同一の画像(SHA-256一致)を探し、重複グループとして並べる。
+    /// バックグラウンドでハッシュ計算するため、大きなフォルダでもUIを止めない。
+    /// </summary>
+    private async Task DetectDuplicatesAsync()
+    {
+        var entries = Entries.ToList();
+        if (entries.Count < 2)
+        {
+            DuplicateGroups.Clear();
+            StatusText = "重複を検出するには画像が2枚以上必要です";
+            return;
+        }
+
+        StatusText = "重複を検出中...";
+        var groups = await Task.Run(() => ComputeDuplicateGroups(entries));
+
+        DuplicateGroups.Clear();
+        foreach (var group in groups)
+            DuplicateGroups.Add(group);
+
+        var dupCount = groups.Sum(g => g.Entries.Count);
+        StatusText = groups.Count == 0
+            ? "重複画像はありません"
+            : $"重複を {groups.Count} 組 ({dupCount} 枚) 検出しました";
+    }
+
+    private static List<DuplicateGroup> ComputeDuplicateGroups(List<ImageEntry> entries)
+    {
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        var byHash = new Dictionary<string, List<ImageEntry>>(StringComparer.Ordinal);
+
+        foreach (var entry in entries)
+        {
+            string? hash = HashFile(sha, entry);
+            if (hash is null)
+                continue;
+
+            if (!byHash.TryGetValue(hash, out var list))
+                byHash[hash] = list = new List<ImageEntry>();
+            list.Add(entry);
+        }
+
+        return byHash.Values
+            .Where(l => l.Count > 1)
+            .OrderByDescending(l => l.Count)
+            .Select(l => new DuplicateGroup(l))
+            .ToList();
+    }
+
+    private static string? HashFile(System.Security.Cryptography.SHA256 sha, ImageEntry entry)
+    {
+        try
+        {
+            using var fs = entry.ArchiveEntryKey is null
+                ? (Stream)new FileStream(entry.FullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete)
+                : new MemoryStream(ArchiveImageService.ReadEntryBytes(entry.FullPath, entry.ArchiveEntryKey));
+            return Convert.ToHexString(sha.ComputeHash(fs));
+        }
+        catch
+        {
+            // ロック中・削除済みなどはスキップ
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 2枚の画像を横並びで比較表示する。通常のページ送り(CurrentIndex)とは独立に
+    /// PrimaryImage/SecondaryImage を直接置き換える。ページを送れば通常表示へ戻る。
+    /// </summary>
+    private async Task ShowComparisonAsync(ImageEntry a, ImageEntry b)
+    {
+        IsSpreadMode = true;
+        var primary = await _cache.GetAsync(a);
+        var secondary = await _cache.GetAsync(b);
+        PrimaryImage = primary;
+        SecondaryImage = secondary;
+        RotationAngle = 0;
+        ZoomMultiplier = 1.0;
+        StatusText = $"比較: {a.FileName} ⇔ {b.FileName}";
+        await RefreshRenderedImagesAsync();
+    }
+
+    private void ShowComparison(ImageEntry a, ImageEntry b) => _ = ShowComparisonAsync(a, b);
+
+    public void Dispose()
+    {
+        StopFolderWatch();
+    }
+
     // --- 設定の保存/復元 ---
 
     public AppSettings CollectSettings()
@@ -815,6 +1006,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             IsSidebarVisible = IsSidebarVisible,
             IsAutoRotate = IsAutoRotate,
             IsWheelZoomMode = IsWheelZoomMode,
+            WatchFolder = IsWatchFolder,
             BoundaryAction = BoundaryAction,
             FitMode = FitMode,
             SlideshowIntervalSeconds = SlideshowIntervalSeconds,
@@ -832,6 +1024,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         IsSidebarVisible = settings.IsSidebarVisible;
         IsAutoRotate = settings.IsAutoRotate;
         IsWheelZoomMode = settings.IsWheelZoomMode;
+        IsWatchFolder = settings.WatchFolder;
         BoundaryAction = settings.BoundaryAction;
         FitMode = settings.FitMode;
         SlideshowIntervalSeconds = settings.SlideshowIntervalSeconds;

@@ -22,7 +22,7 @@ public static class ThumbnailCacheService
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "YmbImageViewer", "thumbcache");
 
-    public static BitmapImage? GetOrCreate(ImageEntry entry)
+    public static BitmapSource? GetOrCreate(ImageEntry entry)
     {
         try
         {
@@ -65,8 +65,12 @@ public static class ThumbnailCacheService
         return Convert.ToHexString(hash);
     }
 
-    private static BitmapImage? DecodeSource(ImageEntry entry)
+    private static BitmapSource? DecodeSource(ImageEntry entry)
     {
+        // WPFのWICはWebPに非対応のため、WebPはImageSharp経由でデコードする。
+        if (WebpDecoder.IsWebp(entry.FileName))
+            return WebpDecoder.DecodeThumbnail(entry, DecodePixelWidth);
+
         try
         {
             var bitmap = new BitmapImage();
@@ -96,7 +100,7 @@ public static class ThumbnailCacheService
         }
     }
 
-    private static void SaveAsPng(BitmapImage image, string path)
+    private static void SaveAsPng(BitmapSource image, string path)
     {
         // 並行スレッドからの同一ファイル書き込みを直列化する。
         lock (WriteLock)

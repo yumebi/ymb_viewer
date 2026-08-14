@@ -67,6 +67,7 @@ public partial class MainWindow : Window
         settings.WindowTop = RestoreBounds.Top;
         settings.WindowMaximized = WindowState == WindowState.Maximized;
         AppSettingsService.Save(settings);
+        _viewModel.Dispose();
     }
 
     private void Window_PreviewMouseWheel(object sender, MouseWheelEventArgs e)

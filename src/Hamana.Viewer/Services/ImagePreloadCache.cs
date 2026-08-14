@@ -9,9 +9,9 @@ namespace Hamana.Viewer.Services;
 // ページ送り時の表示遅延を無くすためのキャッシュ。
 public sealed class ImagePreloadCache
 {
-    private readonly ConcurrentDictionary<string, Task<BitmapImage?>> _cache = new();
+    private readonly ConcurrentDictionary<string, Task<BitmapSource?>> _cache = new();
 
-    public Task<BitmapImage?> GetAsync(ImageEntry entry)
+    public Task<BitmapSource?> GetAsync(ImageEntry entry)
     {
         return _cache.GetOrAdd(entry.CacheKey, _ => LoadAsync(entry));
     }
@@ -40,12 +40,18 @@ public sealed class ImagePreloadCache
         }
     }
 
-    private static Task<BitmapImage?> LoadAsync(ImageEntry entry)
+    private static Task<BitmapSource?> LoadAsync(ImageEntry entry)
     {
         return Task.Run(() =>
         {
             try
             {
+                // WPFのWICはWebPに非対応のため、WebPはImageSharp経由でデコードする。
+                if (WebpDecoder.IsWebp(entry.FileName))
+                    return entry.ArchiveEntryKey is null
+                        ? WebpDecoder.DecodeFile(entry.FullPath)
+                        : WebpDecoder.DecodeBytes(ArchiveImageService.ReadEntryBytes(entry.FullPath, entry.ArchiveEntryKey));
+
                 var bitmap = new BitmapImage();
                 bitmap.BeginInit();
                 bitmap.CacheOption = BitmapCacheOption.OnLoad;
@@ -61,12 +67,12 @@ public sealed class ImagePreloadCache
                     bitmap.StreamSource = ms;
                     bitmap.EndInit();
                     bitmap.Freeze();
-                    return (BitmapImage?)bitmap;
+                    return (BitmapSource?)bitmap;
                 }
 
                 bitmap.EndInit();
                 bitmap.Freeze();
-                return (BitmapImage?)bitmap;
+                return (BitmapSource?)bitmap;
             }
             catch
             {

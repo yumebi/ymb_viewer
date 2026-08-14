@@ -14,6 +14,7 @@ public sealed class AppSettings
     public bool IsSidebarVisible { get; set; }
     public bool IsAutoRotate { get; set; }
     public bool IsWheelZoomMode { get; set; }
+    public bool WatchFolder { get; set; } = true;
     public BoundaryAction BoundaryAction { get; set; } = BoundaryAction.Loop;
     public FitMode FitMode { get; set; } = FitMode.Contain;
     public double SlideshowIntervalSeconds { get; set; } = 3.0;

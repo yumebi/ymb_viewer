@@ -16,6 +16,7 @@
     <!-- System.Drawing.Common は .NET 10 の Windows デスクトップに含まれるため
          パッケージ参照は不要(NU1510)。GIFアニメの処理で System.Drawing を使う。 -->
     <PackageReference Include="SharpCompress" Version="1.0.0" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
   </ItemGroup>
 
 </Project>
