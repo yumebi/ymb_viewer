@@ -12,6 +12,12 @@ public static class ThumbnailCacheService
 {
     private const int DecodePixelWidth = 120;
 
+    // 同一キャッシュファイルへの並行書き込み(コンバータと先読みの同時実行等)を直列化する。
+    // 【v1.0.8】ファイルロックが使えない環境や並行スレッドからの同時書き込みによる
+    // 破損・IO例外を防ぐため、staticロックで書込を直列化し、一時ファイル経由の
+    // アトミックリネームで「部分書き込み済みファイル」が残らないようにする。
+    private static readonly object WriteLock = new();
+
     private static readonly string CacheDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "YmbImageViewer", "thumbcache");
@@ -92,17 +98,27 @@ public static class ThumbnailCacheService
 
     private static void SaveAsPng(BitmapImage image, string path)
     {
-        try
+        // 並行スレッドからの同一ファイル書き込みを直列化する。
+        lock (WriteLock)
         {
-            Directory.CreateDirectory(CacheDir);
-            var encoder = new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(image));
-            using var fs = new FileStream(path, FileMode.Create, FileAccess.Write);
-            encoder.Save(fs);
-        }
-        catch
-        {
-            // キャッシュ保存に失敗しても表示自体には影響しない
+            try
+            {
+                Directory.CreateDirectory(CacheDir);
+                var encoder = new PngBitmapEncoder();
+                encoder.Frames.Add(BitmapFrame.Create(image));
+                // 一時ファイルへ書き込んでからリネームする(部分書き込みによる破損キャッシュを残さない)。
+                var tmp = path + ".tmp";
+                using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write))
+                {
+                    encoder.Save(fs);
+                }
+                File.Move(tmp, path, overwrite: true);
+            }
+            catch
+            {
+                try { if (File.Exists(path + ".tmp")) File.Delete(path + ".tmp"); } catch { /* 無視 */ }
+                // キャッシュ保存に失敗しても表示自体には影響しない
+            }
         }
     }
 
