@@ -26,6 +26,8 @@ public static class WebpDecoder
     {
         try
         {
+            var info = Image.Identify(path);
+            if (info is not null && ExceedsPixelLimit(info)) return null;
             using var image = Image.Load<Rgba32>(path);
             return ToBitmapSource(image, resizeTo: null);
         }
@@ -40,6 +42,8 @@ public static class WebpDecoder
     {
         try
         {
+            var info = Image.Identify(bytes);
+            if (info is not null && ExceedsPixelLimit(info)) return null;
             using var image = Image.Load<Rgba32>(bytes);
             return ToBitmapSource(image, resizeTo: null);
         }
@@ -54,16 +58,31 @@ public static class WebpDecoder
     {
         try
         {
-            using var image = entry.ArchiveEntryKey is null
-                ? Image.Load<Rgba32>(entry.FullPath)
-                : Image.Load<Rgba32>(ArchiveImageService.ReadEntryBytes(entry.FullPath, entry.ArchiveEntryKey));
-            return ToBitmapSource(image, resizeTo: maxDimension);
+            if (entry.ArchiveEntryKey is null)
+            {
+                var info = Image.Identify(entry.FullPath);
+                if (info is not null && ExceedsPixelLimit(info)) return null;
+                using var image = Image.Load<Rgba32>(entry.FullPath);
+                return ToBitmapSource(image, resizeTo: maxDimension);
+            }
+            else
+            {
+                var bytes = ArchiveImageService.ReadEntryBytes(entry.FullPath, entry.ArchiveEntryKey);
+                var info = Image.Identify(bytes);
+                if (info is not null && ExceedsPixelLimit(info)) return null;
+                using var image = Image.Load<Rgba32>(bytes);
+                return ToBitmapSource(image, resizeTo: maxDimension);
+            }
         }
         catch
         {
             return null;
         }
     }
+
+    private static bool ExceedsPixelLimit(ImageInfo info) =>
+        info.Width > 0 && info.Height > 0 &&
+        (long)info.Width * info.Height > SecurityLimits.MaxPixels;
 
     private static BitmapSource ToBitmapSource(RgbaImage image, int? resizeTo)
     {

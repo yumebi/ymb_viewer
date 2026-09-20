@@ -15,6 +15,7 @@ public sealed record GifFrame(BitmapSource Image, TimeSpan Delay);
 public static class AnimatedGifService
 {
     private const int PropertyTagFrameDelay = 0x5100;
+    private const int MaxFrames = 256;
 
     public static List<GifFrame>? TryLoadFrames(ImageEntry entry)
     {
@@ -32,6 +33,9 @@ public static class AnimatedGifService
             var dimension = new GdiFrameDimension(bitmap.FrameDimensionsList[0]);
             int frameCount = bitmap.GetFrameCount(dimension);
             if (frameCount <= 1) return null;
+            // 大量フレーム・巨大サイズのGIFによるメモリ枯渇を防ぐ
+            if (frameCount > MaxFrames) return null;
+            if ((long)bitmap.Width * bitmap.Height > SecurityLimits.MaxPixels) return null;
 
             byte[]? delayBytes = null;
             if (Array.IndexOf(bitmap.PropertyIdList, PropertyTagFrameDelay) >= 0)

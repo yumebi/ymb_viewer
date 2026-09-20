@@ -53,10 +53,23 @@ public static class ArchiveImageService
         using var archive = ArchiveFactory.Open(archivePath);
         var entry = archive.Entries.First(e => e.Key == entryKey);
 
+        // 圧縮方式(7zなど)によっては entry.Size が不明なため、読み込み時の合計サイズで上限を判定する。
         using var ms = new MemoryStream();
         using (var stream = entry.OpenEntryStream())
         {
-            stream.CopyTo(ms);
+            var buffer = new byte[81920];
+            long total = 0;
+            int read;
+            while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                total += read;
+                if (total > SecurityLimits.MaxEntryBytes)
+                {
+                    throw new InvalidOperationException(
+                        $"エントリが大きすぎます({SecurityLimits.MaxEntryBytes / (1024 * 1024)}MB上限)");
+                }
+                ms.Write(buffer, 0, read);
+            }
         }
 
         return ms.ToArray();
