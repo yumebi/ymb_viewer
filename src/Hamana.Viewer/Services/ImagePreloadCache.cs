@@ -2,10 +2,11 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Windows.Media.Imaging;
 using Hamana.Viewer.Models;
+using SixLabors.ImageSharp;
 
 namespace Hamana.Viewer.Services;
 
-// カレントページ周辺を非同期に先読みしてキャッシュしておくことで、
+// カレントページ周辺を非同期に�E読みしてキャッシュしておくことで、
 // ページ送り時の表示遅延を無くすためのキャッシュ。
 public sealed class ImagePreloadCache
 {
@@ -52,6 +53,13 @@ public sealed class ImagePreloadCache
                         ? WebpDecoder.DecodeFile(entry.FullPath)
                         : WebpDecoder.DecodeBytes(ArchiveImageService.ReadEntryBytes(entry.FullPath, entry.ArchiveEntryKey));
 
+                // 非WebPもSecurityLimits.MaxPixelsの上限を適用する。
+                // デコード前にImage.Identifyで寸法を確認し、上限超過ならメモリDoS防止のためnullを返す。
+                var info = entry.ArchiveEntryKey is null
+                    ? Image.Identify(entry.FullPath)
+                    : Image.Identify(ArchiveImageService.ReadEntryBytes(entry.FullPath, entry.ArchiveEntryKey));
+                if (info is not null && SecurityLimits.ExceedsPixelLimit(info.Width, info.Height)) return null;
+
                 var bitmap = new BitmapImage();
                 bitmap.BeginInit();
                 bitmap.CacheOption = BitmapCacheOption.OnLoad;
@@ -59,17 +67,14 @@ public sealed class ImagePreloadCache
                 if (entry.ArchiveEntryKey is null)
                 {
                     bitmap.UriSource = new Uri(entry.FullPath, UriKind.Absolute);
-                }
-                else
-                {
-                    var bytes = ArchiveImageService.ReadEntryBytes(entry.FullPath, entry.ArchiveEntryKey);
-                    using var ms = new MemoryStream(bytes);
-                    bitmap.StreamSource = ms;
                     bitmap.EndInit();
                     bitmap.Freeze();
                     return (BitmapSource?)bitmap;
                 }
 
+                var bytes = ArchiveImageService.ReadEntryBytes(entry.FullPath, entry.ArchiveEntryKey);
+                using var ms = new MemoryStream(bytes);
+                bitmap.StreamSource = ms;
                 bitmap.EndInit();
                 bitmap.Freeze();
                 return (BitmapSource?)bitmap;
