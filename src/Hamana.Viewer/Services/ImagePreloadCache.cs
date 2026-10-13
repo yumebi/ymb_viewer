@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Windows.Media.Imaging;
 using Hamana.Viewer.Models;
-using SixLabors.ImageSharp;
 
 namespace Hamana.Viewer.Services;
 
@@ -47,18 +46,18 @@ public sealed class ImagePreloadCache
         {
             try
             {
-                // WPFのWICはWebPに非対応のため、WebPはImageSharp経由でデコードする。
+                // WPFのWICはWebPに非対応のため、WebPはSkiaSharp経由でデコードする。
                 if (WebpDecoder.IsWebp(entry.FileName))
                     return entry.ArchiveEntryKey is null
                         ? WebpDecoder.DecodeFile(entry.FullPath)
                         : WebpDecoder.DecodeBytes(ArchiveImageService.ReadEntryBytes(entry.FullPath, entry.ArchiveEntryKey));
 
                 // 非WebPもSecurityLimits.MaxPixelsの上限を適用する。
-                // デコード前にImage.Identifyで寸法を確認し、上限超過ならメモリDoS防止のためnullを返す。
-                var info = entry.ArchiveEntryKey is null
-                    ? Image.Identify(entry.FullPath)
-                    : Image.Identify(ArchiveImageService.ReadEntryBytes(entry.FullPath, entry.ArchiveEntryKey));
-                if (info is not null && SecurityLimits.ExceedsPixelLimit(info.Width, info.Height)) return null;
+                // デコード前にWICで寸法だけを読み、上限超過ならメモリDoS防止のためnullを返す。
+                var size = entry.ArchiveEntryKey is null
+                    ? ImageProbe.TryGetSize(entry.FullPath)
+                    : ImageProbe.TryGetSize(ArchiveImageService.ReadEntryBytes(entry.FullPath, entry.ArchiveEntryKey));
+                if (size is not { } s || SecurityLimits.ExceedsPixelLimit(s.Width, s.Height)) return null;
 
                 var bitmap = new BitmapImage();
                 bitmap.BeginInit();

@@ -1,18 +1,17 @@
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Hamana.Viewer.Models;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
-using RgbaImage = SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>;
+using SkiaSharp;
 
 namespace Hamana.Viewer.Services;
 
 /// <summary>
-/// WPFの標準BitmapDecoder(WIC)はWebPに非対応のため、SixLabors.ImageSharpで
-/// デコードして Bgra32 の BitmapSource に変換する。
+/// WPFの標準BitmapDecoder(WIC)はWebPに非対応のため、SkiaSharpで
+/// デコードして Pbgra32 の BitmapSource に変換する。
 /// 静的WebP(VP8/VP8L)のみ対応。アニメーションWebPは先頭フレームを表示する。
+/// 拡張子ではなくファイルの中身で形式を判定し、WebP以外はデコードしない。
 /// </summary>
 public static class WebpDecoder
 {
@@ -26,10 +25,8 @@ public static class WebpDecoder
     {
         try
         {
-            var info = Image.Identify(path);
-            if (info is not null && ExceedsPixelLimit(info)) return null;
-            using var image = Image.Load<Rgba32>(path);
-            return ToBitmapSource(image, resizeTo: null);
+            using var stream = File.OpenRead(path);
+            return Decode(stream, resizeTo: null);
         }
         catch
         {
@@ -42,10 +39,8 @@ public static class WebpDecoder
     {
         try
         {
-            var info = Image.Identify(bytes);
-            if (info is not null && ExceedsPixelLimit(info)) return null;
-            using var image = Image.Load<Rgba32>(bytes);
-            return ToBitmapSource(image, resizeTo: null);
+            using var stream = new MemoryStream(bytes, writable: false);
+            return Decode(stream, resizeTo: null);
         }
         catch
         {
@@ -60,19 +55,13 @@ public static class WebpDecoder
         {
             if (entry.ArchiveEntryKey is null)
             {
-                var info = Image.Identify(entry.FullPath);
-                if (info is not null && ExceedsPixelLimit(info)) return null;
-                using var image = Image.Load<Rgba32>(entry.FullPath);
-                return ToBitmapSource(image, resizeTo: maxDimension);
+                using var stream = File.OpenRead(entry.FullPath);
+                return Decode(stream, resizeTo: maxDimension);
             }
-            else
-            {
-                var bytes = ArchiveImageService.ReadEntryBytes(entry.FullPath, entry.ArchiveEntryKey);
-                var info = Image.Identify(bytes);
-                if (info is not null && ExceedsPixelLimit(info)) return null;
-                using var image = Image.Load<Rgba32>(bytes);
-                return ToBitmapSource(image, resizeTo: maxDimension);
-            }
+
+            var bytes = ArchiveImageService.ReadEntryBytes(entry.FullPath, entry.ArchiveEntryKey);
+            using var ms = new MemoryStream(bytes, writable: false);
+            return Decode(ms, resizeTo: maxDimension);
         }
         catch
         {
@@ -80,40 +69,45 @@ public static class WebpDecoder
         }
     }
 
-    private static bool ExceedsPixelLimit(ImageInfo info) =>
-        info.Width > 0 && info.Height > 0 &&
-        (long)info.Width * info.Height > SecurityLimits.MaxPixels;
-
-    private static BitmapSource ToBitmapSource(RgbaImage image, int? resizeTo)
+    private static BitmapSource? Decode(Stream stream, int? resizeTo)
     {
-        if (resizeTo is > 0 && (image.Width > resizeTo || image.Height > resizeTo))
+        // Create は形式を判別できなければ null を返す。WebP以外はここで弾く。
+        using var codec = SKCodec.Create(stream);
+        if (codec is null || codec.EncodedFormat != SKEncodedImageFormat.Webp) return null;
+
+        // ピクセルを展開する前に寸法を検査し、メモリDoSを防ぐ。
+        var size = codec.Info;
+        if (size.Width <= 0 || size.Height <= 0) return null;
+        if (SecurityLimits.ExceedsPixelLimit(size.Width, size.Height)) return null;
+
+        // WPFのPbgra32(乗算済みアルファ)に合わせる。縮小も乗算済みの状態で行うのが正しい。
+        var info = new SKImageInfo(size.Width, size.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
+        using var bitmap = new SKBitmap(info);
+        if (codec.GetPixels(info, bitmap.GetPixels()) != SKCodecResult.Success) return null;
+
+        if (resizeTo is > 0 && (bitmap.Width > resizeTo || bitmap.Height > resizeTo))
         {
-            image.Mutate(x => x.Resize(new ResizeOptions
-            {
-                Mode = ResizeMode.Max,
-                Size = new Size(resizeTo.Value, resizeTo.Value),
-            }));
+            double scale = Math.Min((double)resizeTo.Value / bitmap.Width, (double)resizeTo.Value / bitmap.Height);
+            int width = Math.Max(1, (int)Math.Round(bitmap.Width * scale));
+            int height = Math.Max(1, (int)Math.Round(bitmap.Height * scale));
+
+            var resizedInfo = new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
+            using var resized = bitmap.Resize(resizedInfo, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
+            return resized is null ? null : ToBitmapSource(resized);
         }
 
-        int width = image.Width;
-        int height = image.Height;
-        int stride = width * 4;
+        return ToBitmapSource(bitmap);
+    }
 
-        // ImageSharpはRGBA順でコピーされるため、WPFのBgra32に合わせてR/Bを入れ替える。
-        byte[] rgba = new byte[height * stride];
-        image.CopyPixelDataTo(rgba);
-        byte[] bgra = new byte[height * stride];
-        for (int i = 0; i < rgba.Length; i += 4)
-        {
-            bgra[i] = rgba[i + 2];       // B
-            bgra[i + 1] = rgba[i + 1];   // G
-            bgra[i + 2] = rgba[i];       // R
-            bgra[i + 3] = rgba[i + 3];   // A
-        }
+    private static BitmapSource ToBitmapSource(SKBitmap bitmap)
+    {
+        int stride = bitmap.RowBytes;
+        byte[] pixels = new byte[stride * bitmap.Height];
+        Marshal.Copy(bitmap.GetPixels(), pixels, 0, pixels.Length);
 
-        var bitmap = BitmapSource.Create(
-            width, height, DefaultDpi, DefaultDpi, PixelFormats.Bgra32, null, bgra, stride);
-        bitmap.Freeze();
-        return bitmap;
+        var source = BitmapSource.Create(
+            bitmap.Width, bitmap.Height, DefaultDpi, DefaultDpi, PixelFormats.Pbgra32, null, pixels, stride);
+        source.Freeze();
+        return source;
     }
 }
