@@ -10,6 +10,7 @@
     <Product>YMB イメージビューワー</Product>
     <Version>1.1.2</Version>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>

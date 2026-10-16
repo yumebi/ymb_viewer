@@ -32,6 +32,7 @@ public partial class MainWindow : Window
         var settings = AppSettingsService.Load();
         ApplyWindowSettings(settings);
         _viewModel.ApplySettingsBeforeLoad(settings);
+        SourceInitialized += (_, _) => RestoreWindowPlacement(settings);
 
         Closing += MainWindow_Closing;
         Loaded += (_, _) =>
@@ -43,18 +44,25 @@ public partial class MainWindow : Window
         };
     }
 
+    /// <summary>大きさだけをここで決める。位置と最大化は、HWNDの作成後(SourceInitialized)に復元する。</summary>
     private void ApplyWindowSettings(AppSettings settings)
     {
         if (settings.WindowWidth > 0) Width = settings.WindowWidth;
         if (settings.WindowHeight > 0) Height = settings.WindowHeight;
+    }
 
-        if (settings.WindowLeft >= 0 && settings.WindowTop >= 0)
+    /// <summary>
+    /// 位置・サイズ・最大化を、表示の前に復元する(既定の位置に一瞬出てから動くのを防ぐ)。
+    /// 保存した位置は、現在のモニタ構成に合わせて補正する。タイトルバーはテーマの配色に合わせる。
+    /// </summary>
+    private void RestoreWindowPlacement(AppSettings settings)
+    {
+        var scale = WindowStateHelper.Scale(new System.Windows.Interop.WindowInteropHelper(this).Handle);
+        if (WindowStateHelper.ToDesiredBounds(settings, scale) is { } desired)
         {
-            WindowStartupLocation = WindowStartupLocation.Manual;
-            Left = settings.WindowLeft;
-            Top = settings.WindowTop;
+            WindowStateHelper.ApplyBounds(this, desired);
         }
-
+        TitleBarTheme.Apply(this);
         if (settings.WindowMaximized) WindowState = WindowState.Maximized;
     }
 
@@ -66,6 +74,15 @@ public partial class MainWindow : Window
         settings.WindowLeft = RestoreBounds.Left;
         settings.WindowTop = RestoreBounds.Top;
         settings.WindowMaximized = WindowState == WindowState.Maximized;
+        // 物理ピクセルでも保存する。上の DIP の値は旧バージョン用に残す。
+        if (WindowStateHelper.Capture(this) is { } placement)
+        {
+            settings.WindowPxX = placement.Normal.X;
+            settings.WindowPxY = placement.Normal.Y;
+            settings.WindowPxWidth = placement.Normal.Width;
+            settings.WindowPxHeight = placement.Normal.Height;
+            settings.WindowMaximized = placement.Maximized;
+        }
         AppSettingsService.Save(settings);
         _viewModel.Dispose();
     }

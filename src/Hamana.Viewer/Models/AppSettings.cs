@@ -26,4 +26,11 @@ public sealed class AppSettings
     public double WindowLeft { get; set; } = -1;
     public double WindowTop { get; set; } = -1;
     public bool WindowMaximized { get; set; }
+
+    // 物理ピクセルの位置とサイズ(通常の状態)。DPIの異なるモニタが混在しても位置がずれない。
+    // 上の DIP の値は旧バージョンとの互換のために書き続ける。
+    public int? WindowPxX { get; set; }
+    public int? WindowPxY { get; set; }
+    public int? WindowPxWidth { get; set; }
+    public int? WindowPxHeight { get; set; }
 }

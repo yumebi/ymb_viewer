@@ -7,9 +7,15 @@ namespace Hamana.Viewer.Services;
 
 public static class AppSettingsService
 {
+    /// <summary>開発・動作確認用。設定すると、設定ファイルの保存先をこのフォルダに切り替える。</summary>
+    public const string DataDirEnvVar = "YMB_HAMANA_DATA_DIR";
+
+    // 本番の設定(最後に開いたフォルダなど)に触れずに起動して確かめられるよう、環境変数で保存先を変えられる。
     private static readonly string SettingsPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "YmbImageViewer", "settings.json");
+        Environment.GetEnvironmentVariable(DataDirEnvVar) is { Length: > 0 } overrideDir
+            ? overrideDir
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "YmbImageViewer"),
+        "settings.json");
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
