@@ -18,4 +18,8 @@
     <ProjectReference Include="..\..\src\Hamana.Viewer\Hamana.Viewer.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="TestData\*.webp" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

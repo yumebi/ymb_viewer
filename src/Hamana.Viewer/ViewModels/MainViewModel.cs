@@ -732,7 +732,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         // ここで先にリセットしてしまうと、旧画像がFitサイズへ縮んでから新画像に切り替わる
         // 「ちらつき」が発生するため。
         var newPrimary = await _cache.GetAsync(primaryEntry);
-        var gifFrames = await Task.Run(() => AnimatedGifService.TryLoadFrames(primaryEntry));
+        // アニメーションGIFと、アニメーションWebP(フレームが複数ある場合だけ)をループ再生する
+        var gifFrames = await Task.Run(() =>
+            AnimatedGifService.TryLoadFrames(primaryEntry) ?? AnimatedWebpService.TryLoadFrames(primaryEntry));
 
         // await中にさらにページ送りされていたら、この結果はもう不要。
         if (CurrentIndex < 0 || CurrentIndex >= Entries.Count || !ReferenceEquals(Entries[CurrentIndex], primaryEntry))

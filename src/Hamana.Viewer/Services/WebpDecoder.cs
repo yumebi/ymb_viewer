@@ -10,7 +10,8 @@ namespace Hamana.Viewer.Services;
 /// <summary>
 /// WPFの標準BitmapDecoder(WIC)はWebPに非対応のため、SkiaSharpで
 /// デコードして Pbgra32 の BitmapSource に変換する。
-/// 静的WebP(VP8/VP8L)のみ対応。アニメーションWebPは先頭フレームを表示する。
+/// ここでは静止画として(アニメーションWebPは先頭フレームを)デコードする。サムネイルや
+/// 先読みキャッシュ用。アニメーションの再生は <see cref="AnimatedWebpService"/> が行う。
 /// 拡張子ではなくファイルの中身で形式を判定し、WebP以外はデコードしない。
 /// </summary>
 public static class WebpDecoder
