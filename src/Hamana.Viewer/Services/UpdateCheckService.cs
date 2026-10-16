@@ -1,16 +1,17 @@
 using System.Net.Http;
-using System.Text.Json;
 
 namespace Hamana.Viewer.Services;
 
 public sealed record UpdateCheckResult(bool IsNewer, string? LatestVersion, string ReleaseUrl);
 
-// version.json ( https://github.com/yumebi/ymb_viewer ) と現行バージョンを比較する。
-// リポジトリ未公開時やオフライン時は例外を握りつぶし「更新なし」を返す。
+// GitHub の最新リリース(Releases API)と現行バージョンを比較する。
+// version.json ではなく公開済みのリリースを見るのは、リリースに失敗しても version.json だけ
+// 先に更新されて、存在しない版を案内してしまうのを避けるため。
+// オフライン時・API制限時は例外を握りつぶし「更新なし」を返す。
 public static class UpdateCheckService
 {
-    private const string VersionJsonUrl = "https://raw.githubusercontent.com/yumebi/ymb_viewer/master/version.json";
-    private const string ReleasesUrl = "https://github.com/yumebi/ymb_viewer/releases/latest";
+    private const string Repo = "yumebi/ymb_viewer";
+    private const string ReleasesUrl = "https://github.com/" + Repo + "/releases/latest";
 
     public static async Task<UpdateCheckResult> CheckAsync(Version currentVersion)
     {
@@ -18,23 +19,21 @@ public static class UpdateCheckService
         {
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
             client.DefaultRequestHeaders.UserAgent.ParseAdd("YmbImageViewer-UpdateCheck");
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
 
-            var json = await client.GetStringAsync(VersionJsonUrl);
-            using var doc = JsonDocument.Parse(json);
-            var versionText = doc.RootElement.GetProperty("version").GetString();
-
-            if (versionText is null || !Version.TryParse(NormalizeVersion(versionText), out var latest))
+            var json = await client.GetStringAsync(GitHubRelease.ApiUrl(Repo));
+            var release = GitHubRelease.Parse(json, Repo);
+            if (release is null)
             {
-                return new UpdateCheckResult(false, versionText, ReleasesUrl);
+                return new UpdateCheckResult(false, null, ReleasesUrl);
             }
 
-            return new UpdateCheckResult(latest > currentVersion, versionText, ReleasesUrl);
+            var isNewer = GitHubRelease.IsNewer(release.Version, currentVersion.ToString());
+            return new UpdateCheckResult(isNewer, release.Version, release.Url ?? ReleasesUrl);
         }
         catch
         {
             return new UpdateCheckResult(false, null, ReleasesUrl);
         }
     }
-
-    private static string NormalizeVersion(string text) => text.TrimStart('v', 'V');
 }
